@@ -1,0 +1,151 @@
+import { QueryClient } from "@tanstack/react-query";
+import { SEED_LISTINGS, SEED_EXPANSIONS, SEED_ALERT_RULES } from "./seedData";
+
+// In-memory store for static/no-backend mode
+let listingsStore = [...SEED_LISTINGS];
+let expansionsStore = [...SEED_EXPANSIONS];
+let alertRulesStore = [...SEED_ALERT_RULES];
+let nextId = { listings: 100, expansions: 100, alerts: 100 };
+
+async function staticHandler(
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<{ ok: boolean; json: () => Promise<unknown> }> {
+  const makeResponse = (data: unknown) => ({
+    ok: true,
+    json: async () => data,
+  });
+
+  if (path === "/api/listings" && method === "GET") {
+    return makeResponse(listingsStore);
+  }
+
+  if (path === "/api/listings" && method === "POST") {
+    const rec = { id: nextId.listings++, ...(body as any) };
+    listingsStore.push(rec);
+    return makeResponse(rec);
+  }
+
+  if (path.startsWith("/api/listings/") && method === "DELETE") {
+    const id = parseInt(path.split("/").pop()!);
+    listingsStore = listingsStore.filter((l) => l.id !== id);
+    return makeResponse({ ok: true });
+  }
+
+  if (path.startsWith("/api/listings/") && method === "PATCH") {
+    const id = parseInt(path.split("/").pop()!);
+    listingsStore = listingsStore.map((l) =>
+      l.id === id ? { ...l, ...(body as any) } : l
+    );
+    return makeResponse(listingsStore.find((l) => l.id === id));
+  }
+
+  if (path === "/api/expansions" && method === "GET") {
+    return makeResponse(expansionsStore);
+  }
+
+  if (path === "/api/expansions" && method === "POST") {
+    const rec = { id: nextId.expansions++, ...(body as any) };
+    expansionsStore.push(rec);
+    return makeResponse(rec);
+  }
+
+  if (path.startsWith("/api/expansions/") && method === "DELETE") {
+    const id = parseInt(path.split("/").pop()!);
+    expansionsStore = expansionsStore.filter((e) => e.id !== id);
+    return makeResponse({ ok: true });
+  }
+
+  if (path === "/api/alert-rules" && method === "GET") {
+    return makeResponse(alertRulesStore);
+  }
+
+  if (path === "/api/alert-rules" && method === "POST") {
+    const rec = { id: nextId.alerts++, ...(body as any) };
+    alertRulesStore.push(rec);
+    return makeResponse(rec);
+  }
+
+  if (path.startsWith("/api/alert-rules/") && method === "PATCH") {
+    const id = parseInt(path.split("/").pop()!);
+    alertRulesStore = alertRulesStore.map((r) =>
+      r.id === id ? { ...r, ...(body as any) } : r
+    );
+    return makeResponse(alertRulesStore.find((r) => r.id === id));
+  }
+
+  if (path.startsWith("/api/alert-rules/") && method === "DELETE") {
+    const id = parseInt(path.split("/").pop()!);
+    alertRulesStore = alertRulesStore.filter((r) => r.id !== id);
+    return makeResponse({ ok: true });
+  }
+
+  if (path === "/api/stats" && method === "GET") {
+    return makeResponse({
+      active: listingsStore.filter((l) => l.status === "active").length,
+      watch: listingsStore.filter((l) => l.status === "watch").length,
+      totalListings: listingsStore.length,
+      totalExpansions: expansionsStore.length,
+      totalSqft: listingsStore.reduce(
+        (s, l) => s + (l.squareFootage || 0),
+        0
+      ),
+      expansionInvestment: expansionsStore.reduce(
+        (s, e) => s + (e.investmentBillions || 0),
+        0
+      ),
+    });
+  }
+
+  return makeResponse({ error: "Not found" });
+}
+
+async function getQueryFn({
+  queryKey,
+}: {
+  queryKey: readonly unknown[];
+}) {
+  const path = String(queryKey[0]);
+
+  const response = await fetch(path, {
+    credentials: "same-origin",
+  });
+
+  if (!response.ok) {
+    throw new Error(`${response.status}: ${await response.text()}`);
+  }
+
+  return response.json();
+}
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      queryFn: getQueryFn,
+      staleTime: 30_000,
+      retry: false,
+    },
+  },
+});
+
+export async function apiRequest(
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<any> {
+  const response = await fetch(path, {
+    method,
+    credentials: "same-origin",
+    headers: body !== undefined
+      ? { "Content-Type": "application/json" }
+      : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    throw new Error(`${response.status}: ${await response.text()}`);
+  }
+
+  return response.json();
+}
